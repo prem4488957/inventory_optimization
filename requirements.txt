@@ -1,0 +1,25 @@
+# Retail Inventory AI - Python dependencies (Python 3.13)
+# Core data
+pandas>=2.2
+numpy>=1.26
+
+# Feature engineering / statistics
+scipy>=1.13
+statsmodels>=0.14
+
+# Machine learning models
+scikit-learn>=1.4
+lightgbm>=4.0
+xgboost>=2.0
+
+# Deep learning (LSTM)
+torch>=2.0
+
+# Web / API / dashboard
+Flask>=3.0
+flask-cors>=4.0
+streamlit>=1.30
+plotly>=5.0
+
+# Testing
+pytest>=8.0
