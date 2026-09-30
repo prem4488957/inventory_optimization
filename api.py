@@ -11,6 +11,7 @@ from inventory_optimizer import (
     summarize_optimization,
     forecast_demand,
 )
+from deep_learning_model import LSTMRegressor
 import database as db
 import recommendation_engine as rec
 
@@ -24,17 +25,48 @@ with open("model_metrics.json", "r") as f:
 BEST_MODEL = METRICS.get("best_model", "Random Forest")
 # Best model -> pickle file mapping (only scalar-MAE models have pkl files)
 MODEL_FILES = {
-    "Random Forest": "random_forest_model.pkl",
     "XGBoost": "xgboost_model.pkl",
-    "LightGBM": "lightgbm_model.pkl",
+    "Random Forest": "random_forest_model.pkl",
     "Gradient Boosting": "gradient_boosting_model.pkl",
+    "LightGBM": "lightgbm_model.pkl",
     "Linear Regression": "linear_regression_model.pkl",
     "Support Vector (RBF)": "support_vector_svr_model.pkl",
+    "Seasonal Baseline (Holt-Winters)": "seasonal_models.pkl",
+    "LSTM (PyTorch)": "lstm_models.pkl",
+}
+
+SLUG_MAP = {
+    "xgboost": "XGBoost",
+    "random_forest": "Random Forest",
+    "randomforest": "Random Forest",
+    "gradient_boosting": "Gradient Boosting",
+    "gradboost": "Gradient Boosting",
+    "lightgbm": "LightGBM",
+    "lgb": "LightGBM",
+    "linear_regression": "Linear Regression",
+    "support_vector_svr": "Support Vector (RBF)",
+    "svr": "Support Vector (RBF)",
+    "seasonal": "Seasonal Baseline (Holt-Winters)",
+    "holt_winters": "Seasonal Baseline (Holt-Winters)",
+    "prophet": "Seasonal Baseline (Holt-Winters)",
+    "lstm": "LSTM (PyTorch)",
 }
 
 
 def _resolve_model(model_name):
-    model_name = model_name or BEST_MODEL
+    if not model_name:
+        model_name = BEST_MODEL
+    # Case-insensitive / slug matching
+    cleaned = str(model_name).strip().lower().replace("-", "_").replace(" ", "_")
+    if cleaned in SLUG_MAP:
+        model_name = SLUG_MAP[cleaned]
+    else:
+        # Search for exact key match ignoring case
+        for k in MODEL_FILES.keys():
+            if k.lower() == str(model_name).strip().lower():
+                model_name = k
+                break
+
     if model_name not in MODEL_FILES:
         raise ValueError(f"Unknown model '{model_name}'. Available: {list(MODEL_FILES)}")
     return model_name, MODEL_FILES[model_name]
@@ -55,6 +87,7 @@ def home():
             "/api/recommendations",
             "/api/metrics",
             "/api/db/<table>",
+            "/api/chat?q=...",
         ],
     })
 
@@ -167,6 +200,35 @@ def competitor_intelligence(product_id):
     category = prod_df["category"].iloc[0]
     info = get_competitor_intelligence_summary(product_id, unit_price, category)
     return jsonify(info)
+
+
+@app.route("/api/chat", methods=["GET", "POST"])
+def chat():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        query = data.get("query") or data.get("message") or ""
+        selected_brand = data.get("selected_brand")
+        selected_product = data.get("selected_product")
+        current_stock = data.get("current_stock", 60)
+    else:
+        query = request.args.get("q") or request.args.get("query") or ""
+        selected_brand = request.args.get("selected_brand")
+        selected_product = request.args.get("selected_product")
+        current_stock = request.args.get("current_stock", 60, type=int)
+
+    from chatbot import process_query
+    response_text = process_query(
+        query=query,
+        df=DATA,
+        metrics=METRICS,
+        selected_brand=selected_brand,
+        selected_product=selected_product,
+        current_stock=current_stock,
+    )
+    return jsonify({
+        "query": query,
+        "response": response_text
+    })
 
 
 if __name__ == "__main__":

@@ -23,23 +23,39 @@ CATEGORY_ELASTICITY = {
 }
 
 
-def generate_competitor_prices(product_id: str, our_price: float, seed: int = 42) -> dict:
+def generate_competitor_prices(
+    product_id: str,
+    our_price: float,
+    seed: int = 42,
+    amazon_price: float = None,
+    flipkart_price: float = None,
+    reliance_price: float = None,
+) -> dict:
     """
-    Generates realistic competitor benchmark prices (Amazon, Flipkart, Reliance Digital)
+    Generates or accepts realistic competitor benchmark prices (Amazon, Flipkart, Reliance Digital)
     for a given product and unit price.
     """
     # Deterministic seed based on product_id hash
     pid_num = sum(ord(c) for c in product_id) + seed
     rng = np.random.RandomState(pid_num)
 
-    # Competitor price variation between -10% and +8% relative to our price
-    amazon_var = rng.uniform(-0.09, 0.06)
-    flipkart_var = rng.uniform(-0.10, 0.07)
-    reliance_var = rng.uniform(-0.07, 0.08)
+    if amazon_price is None or amazon_price <= 0:
+        amazon_var = rng.uniform(-0.09, 0.06)
+        amazon_price = round(our_price * (1.0 + amazon_var), 2)
+    else:
+        amazon_price = round(float(amazon_price), 2)
 
-    amazon_price = round(our_price * (1.0 + amazon_var), 2)
-    flipkart_price = round(our_price * (1.0 + flipkart_var), 2)
-    reliance_price = round(our_price * (1.0 + reliance_var), 2)
+    if flipkart_price is None or flipkart_price <= 0:
+        flipkart_var = rng.uniform(-0.10, 0.07)
+        flipkart_price = round(our_price * (1.0 + flipkart_var), 2)
+    else:
+        flipkart_price = round(float(flipkart_price), 2)
+
+    if reliance_price is None or reliance_price <= 0:
+        reliance_var = rng.uniform(-0.07, 0.08)
+        reliance_price = round(our_price * (1.0 + reliance_var), 2)
+    else:
+        reliance_price = round(float(reliance_price), 2)
 
     comp_avg = round(float(np.mean([amazon_price, flipkart_price, reliance_price])), 2)
     rpi = round(our_price / comp_avg, 3) if comp_avg > 0 else 1.0
@@ -103,10 +119,24 @@ def analyze_market_threat(our_price: float, comp_metrics: dict, category: str = 
     }
 
 
-def get_competitor_intelligence_summary(product_id: str, our_price: float, category: str = "Smartphone") -> dict:
+def get_competitor_intelligence_summary(
+    product_id: str,
+    our_price: float,
+    category: str = "Smartphone",
+    amazon_price: float = None,
+    flipkart_price: float = None,
+    reliance_price: float = None,
+) -> dict:
     """
-    Convenience orchestrator for a full product competitor intelligence summary.
+    Convenience orchestrator for a full product competitor intelligence summary with optional price overrides.
     """
-    comp_prices = generate_competitor_prices(product_id, our_price)
+    comp_prices = generate_competitor_prices(
+        product_id,
+        our_price,
+        amazon_price=amazon_price,
+        flipkart_price=flipkart_price,
+        reliance_price=reliance_price,
+    )
     threat_analysis = analyze_market_threat(our_price, comp_prices, category)
     return {**comp_prices, **threat_analysis}
+

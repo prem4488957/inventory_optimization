@@ -66,8 +66,24 @@ def prepare_sample(df, n_samples=500, seed=42):
 def shap_values(model, X, n_samples=200):
     """Compute SHAP values using the most efficient explainer for the model."""
     X = X.head(n_samples) if isinstance(X, pd.DataFrame) else X[:n_samples]
-    explainer = shap.TreeExplainer(model)
-    return explainer, explainer.shap_values(X)
+    try:
+        explainer = shap.TreeExplainer(model)
+        sv = explainer.shap_values(X)
+    except Exception:
+        # Fast kernel background sampling for non-tree models (Linear Regression / SVR)
+        X_fast = X.head(25)
+        explainer = shap.KernelExplainer(model.predict, X_fast.head(5))
+        sv = explainer.shap_values(X_fast)
+    return explainer, sv
+
+
+def get_expected_value_scalar(explainer):
+    ev = getattr(explainer, "expected_value", 0.0)
+    if isinstance(ev, (np.ndarray, list)):
+        if len(ev) > 0:
+            return float(np.ravel(ev)[0])
+        return 0.0
+    return float(ev)
 
 
 def global_importance_bar(model, X, save_path="shap_importance.png", top_n=12):
@@ -109,7 +125,8 @@ def local_waterfall(model, X, row_index=0, save_path="shap_local.png"):
     feature_names = [FEATURE_LABELS.get(f, f) for f in FEATURES]
     X_named = X.copy()
     X_named.columns = feature_names
-    exp = shap.Explanation(values=sv[row_index], base_values=explainer.expected_value,
+    base_val = get_expected_value_scalar(explainer)
+    exp = shap.Explanation(values=sv[row_index], base_values=base_val,
                             data=X_named.iloc[row_index].values, feature_names=feature_names)
     fig = shap.waterfall_plot(exp, show=False)
     plt.gcf().set_size_inches(8, 6)
@@ -137,8 +154,9 @@ def generate_explanation(product_name, explainer, local_sv, local_feats,
     local_feats : renamed next-day feature row (for context values).
     imp_df : global mean-|SHAP| importance DataFrame.
     """
-    base = float(explainer.expected_value)
-    pred = base + float(local_sv.sum())
+    base = get_expected_value_scalar(explainer)
+    local_sv_arr = np.asarray(local_sv).reshape(-1)
+    pred = base + float(local_sv_arr.sum())
     local_sv = np.asarray(local_sv).reshape(-1)
 
     pos = [(i, float(v)) for i, v in enumerate(local_sv) if v > 0]

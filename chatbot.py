@@ -19,7 +19,9 @@ from inventory_optimizer import (
 from recommendation_engine import recommend_bundles, product_similarity
 
 
-def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
+def process_query(query: str, df: pd.DataFrame, metrics: dict = None,
+                  selected_brand: str = None, selected_product: str = None,
+                  current_stock: int = 60) -> str:
     """
     Process a natural language user query over the inventory dataset and returns
     a formatted Cyberpunk Markdown response.
@@ -30,10 +32,27 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
         return "🤖 **CYBER_AI_ASSISTANT**: Please enter a question or command regarding inventory, forecasts, ROP, or recommendations."
 
     # -------------------------------------------------------------------
+    # 0. GREETINGS & SYSTEM HELP
+    # -------------------------------------------------------------------
+    if any(re.search(r'\b' + re.escape(k) + r'\b', query_clean) for k in ["hi", "hello", "hey", "help"]) or any(k in query_clean for k in ["who are you", "what can you do"]):
+        total_prods = df["product_id"].nunique()
+        total_records = len(df)
+        return f"""🤖 **// CYBER AI INVENTORY ASSISTANT ONLINE**
+
+I can assist you with real-time supply chain analytics across **{total_prods} products** ({total_records:,} telemetry records).
+
+**Try asking me:**
+* 🚨 *"Which products need restock urgently?"*
+* 📱 *"Tell me about iPhone 16 Pro"* or *"What is the ROP for Galaxy S24?"*
+* 🔥 *"Which product has the highest demand velocity?"*
+* 📦 *"Recommend product bundles"*
+* 📊 *"Show model accuracy comparison"*
+"""
+
+    # -------------------------------------------------------------------
     # 1. RESTOCK & DEFICIT ALERTS
     # -------------------------------------------------------------------
     if any(k in query_clean for k in ["restock", "reorder", "alert", "deficit", "stockout", "out of stock", "urgent"]):
-        # Compute optimization metrics for all products
         results = []
         for (brand, pname), pgroup in df.groupby(["brand", "product_name"]):
             pid = pgroup["product_id"].iloc[0]
@@ -43,13 +62,13 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
             std_daily = float(np.std(sales)) if float(np.std(sales)) > 0 else 2.0
             
             rop = reorder_point(avg_daily, lead_time, std_daily, 95)
-            # Default warehouse stock benchmark: 60 units
-            needs, qty = restock_decision(60, rop, avg_daily)
+            stock_check = current_stock if (selected_product and pname.lower() == selected_product.lower()) else 60
+            needs, qty = restock_decision(stock_check, rop, avg_daily)
             if needs:
                 results.append((brand, pname, pid, int(np.ceil(rop)), qty))
                 
         if results:
-            response = "🚨 **// CRITICAL RESTOCK ALERTS (60-Unit Stock Baseline)**:\n\n"
+            response = f"🚨 **// CRITICAL RESTOCK ALERTS ({current_stock}-Unit Stock Baseline)**:\n\n"
             for brand, pname, pid, rop_val, qty in results[:10]:
                 response += f"• `{pid}` **{brand} {pname}**\n  └ ROP: `{rop_val} units` | Order Qty: **{qty} units**\n\n"
             response += "💡 *Tip: Adjust safety stock slider to boost coverage runway.*"
@@ -58,17 +77,36 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
             return "⚡ **// ALL SYSTEMS OPTIMAL**: Current inventory levels exceed Reorder Point thresholds across the entire product catalog. Zero deficits."
 
     # -------------------------------------------------------------------
-    # 2. PRODUCT SPECIFIC INQUIRIES (e.g. "iPhone 15", "LG AC", "S24")
+    # 2. PRODUCT SPECIFIC INQUIRIES (Exact + Longest Match Scoring)
     # -------------------------------------------------------------------
     all_products = df[["product_id", "brand", "product_name", "category", "unit_price", "lead_time_days"]].drop_duplicates()
+    records = all_products.to_dict("records")
+    # Sort longest product names first to prevent false partial prefix matches
+    records_sorted = sorted(records, key=lambda x: len(x["product_name"]), reverse=True)
+    
     matched_prod = None
-    for _, row in all_products.iterrows():
-        pname = row["product_name"].lower()
-        pid = row["product_id"].lower()
-        brand = row["brand"].lower()
-        if pname in query_clean or pid == query_clean or (brand in query_clean and pname.split()[0].lower() in query_clean):
+    
+    # Direct match check
+    for row in records_sorted:
+        pname_lower = row["product_name"].lower()
+        pid_lower = row["product_id"].lower()
+        brand_lower = row["brand"].lower()
+        full_title = f"{brand_lower} {pname_lower}"
+        
+        if pid_lower == query_clean or pid_lower in query_clean:
             matched_prod = row
             break
+        elif pname_lower in query_clean or full_title in query_clean:
+            matched_prod = row
+            break
+
+    # If no specific product found in query text, check if query refers to active selected product
+    if matched_prod is None and selected_product:
+        if any(k in query_clean for k in ["this", "current", "selected", "my product", "rop", "safety stock", "eoq", "inventory", "stock", "dossier"]):
+            for row in records:
+                if row["product_name"].lower() == selected_product.lower():
+                    matched_prod = row
+                    break
 
     if matched_prod is not None:
         pid = matched_prod["product_id"]
@@ -77,7 +115,7 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
         cat = matched_prod["category"]
         price = float(matched_prod["unit_price"])
         if price < 2000:
-            price *= 83.0  # USD -> INR fail-safe
+            price *= 83.0  # USD -> INR conversion
         lead_time = int(matched_prod["lead_time_days"])
 
         pgroup = df[df["product_id"] == pid].sort_values("date")
@@ -89,7 +127,7 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
         rop = reorder_point(avg_daily, lead_time, std_daily, 95)
         annual_demand = avg_daily * 365
         eoq = economic_order_quantity(annual_demand, 50.0, price * 0.25)
-        dos = days_of_supply(60, avg_daily)
+        dos = days_of_supply(current_stock, avg_daily)
 
         return f"""📊 **// PRODUCT TELEMETRY DOSSIER: {brand.upper()} {pname.upper()} (`{pid}`)**
 
@@ -97,10 +135,10 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
 * **Unit Price**: ₹{price:,.2f}
 * **Lead Time**: {lead_time} Days
 * **Daily Velocity**: `{avg_daily:.1f} units/day` (30D Mean)
-* **Safety Stock (Buffer)**: `{int(np.ceil(ss))} units` (95% Service Level)
+* **Safety Stock (Buffer)**: `{int(np.ceil(ss))} units` (95% Target SLA)
 * **Reorder Point (ROP)**: `{int(np.ceil(rop))} units`
 * **Economic Order Qty (EOQ)**: `{int(np.ceil(eoq))} units/batch`
-* **Days of Supply (at 60 units)**: `{dos:.1f} days runway`
+* **Days of Supply (at {current_stock} units)**: `{dos:.1f} days runway`
 """
 
     # -------------------------------------------------------------------
@@ -130,7 +168,7 @@ def process_query(query: str, df: pd.DataFrame, metrics: dict = None) -> str:
     # -------------------------------------------------------------------
     # 5. MODEL COMPARISON & ACCURACY
     # -------------------------------------------------------------------
-    if any(k in query_clean for k in ["model", "accuracy", "mae", "rmse", "best model", "xgboost", "random forest"]):
+    if any(k in query_clean for k in ["model", "accuracy", "mae", "rmse", "best model", "xgboost", "random forest", "lightgbm", "lstm"]):
         if metrics and "metrics" in metrics:
             best = metrics.get("best_model", "XGBoost")
             response = f"🧠 **// NEURAL ARCHITECTURE SUMMARY**\n\n"
@@ -153,7 +191,7 @@ I can assist you with real-time supply chain analytics across **{total_prods} pr
 
 **Try asking me:**
 * 🚨 *"Which products need restock urgently?"*
-* 📱 *"Tell me about iPhone 15 Pro"* or *"What is the ROP for Galaxy S24?"*
+* 📱 *"Tell me about iPhone 16 Pro"* or *"What is the ROP for Galaxy S24?"*
 * 🔥 *"Which product has the highest demand velocity?"*
 * 📦 *"Recommend product bundles"*
 * 📊 *"Show model accuracy comparison"*
