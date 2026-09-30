@@ -485,10 +485,26 @@ def load_resources():
         df = load_engineered_data()
     df["date"] = pd.to_datetime(df["date"])
     models = {}
-    for name, path in MODEL_FILES.items():
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                models[name] = pickle.load(f)
+    model_candidates = {
+        "Random Forest": ["randomforest_model.pkl", "random_forest_model.pkl"],
+        "XGBoost": ["xgboost_model.pkl"],
+        "Gradient Boosting": ["gradient_boosting_model.pkl"],
+        "LightGBM": ["lightgbm_model.pkl"],
+        "Linear Regression": ["linear_regression_model.pkl"],
+        "Support Vector (RBF)": ["support_vector_svr_model.pkl"],
+        "Seasonal Baseline (Holt-Winters)": ["seasonal_models.pkl"],
+        "LSTM (PyTorch)": ["lstm_models.pkl"],
+    }
+    for name, filenames in model_candidates.items():
+        for fname in filenames:
+            path = os.path.join(BASE_DIR, fname)
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        models[name] = pickle.load(f)
+                    break
+                except Exception:
+                    pass
     metrics = None
     metrics_path = os.path.join(BASE_DIR, "model_metrics.json")
     try:
@@ -964,14 +980,15 @@ else:
 
     st.sidebar.markdown("### // NEURAL_ENGINE")
 
+    model_options = list(models.keys()) if models else list(MODEL_FILES.keys())
     selected_model = st.sidebar.selectbox(
         "Architecture Core:",
-        list(MODEL_FILES.keys()),
+        model_options,
         index=0,
         key="sb_selected_model",
         help="Select the trained neural/tree model for demand prediction.",
     )
-    model = models[selected_model]
+    model = models.get(selected_model)
 
     show_xai = st.sidebar.checkbox("🧠 Neural XAI (SHAP)", value=True, key="sb_show_xai", help="Enable SHAP explainability engine.")
 
