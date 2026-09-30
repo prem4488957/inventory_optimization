@@ -15,11 +15,13 @@ xgboost>=2.0
 # Deep learning (LSTM)
 torch>=2.0
 
-# Web / API / dashboard
+# Web / API / dashboard / visualization
 Flask>=3.0
 flask-cors>=4.0
 streamlit>=1.30
 plotly>=5.0
+matplotlib>=3.8
+shap>=0.44
 
 # Testing
 pytest>=8.0
