@@ -33,6 +33,18 @@ DEFAULT_FEATURES = [
 # Stage 10 - Demand Forecasting
 # ---------------------------------------------------------------------------
 def load_engineered_data(path="featured_sales_data.csv"):
+    if not os.path.exists(path):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_dir, path)
+    if not os.path.exists(path):
+        try:
+            from generate_data import generate_retail_data
+            from feature_engineering import engineer_features
+            raw_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "retail_sales_data.csv")
+            generate_retail_data(raw_path)
+            engineer_features(raw_path, path)
+        except Exception:
+            pass
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"])
     return df

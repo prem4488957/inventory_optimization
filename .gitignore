@@ -5,8 +5,15 @@ __pycache__/
 
 # Data / artifacts
 *.pkl
-*.csv
-*.db
+!randomforest_model.pkl
+!xgboost_model.pkl
+!gradient_boosting_model.pkl
+!lightgbm_model.pkl
+!linear_regression_model.pkl
+!support_vector_svr_model.pkl
+!seasonal_models.pkl
+!lstm_models.pkl
+
 *.zip
 
 # Logs

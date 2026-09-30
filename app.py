@@ -467,7 +467,7 @@ div[data-testid="stPopoverBody"] {
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_FILES = {
     "XGBoost": os.path.join(BASE_DIR, "xgboost_model.pkl"),
-    "Random Forest": os.path.join(BASE_DIR, "random_forest_model.pkl"),
+    "Random Forest": os.path.join(BASE_DIR, "randomforest_model.pkl") if os.path.exists(os.path.join(BASE_DIR, "randomforest_model.pkl")) else os.path.join(BASE_DIR, "random_forest_model.pkl"),
     "Gradient Boosting": os.path.join(BASE_DIR, "gradient_boosting_model.pkl"),
     "LightGBM": os.path.join(BASE_DIR, "lightgbm_model.pkl"),
     "Linear Regression": os.path.join(BASE_DIR, "linear_regression_model.pkl"),
